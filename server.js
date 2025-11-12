@@ -2,6 +2,7 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+const MongoStore = require('connect-mongo');
 const cors = require('cors');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
@@ -40,14 +41,16 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Session setup
 app.use(session({
+    name: 'connect.sid', // optional, default name
     secret: process.env.SESSION_SECRET || 'mysecretkey',
     resave: false,
     saveUninitialized: false,
+    store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
     cookie: {
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000,
         sameSite: 'none',  // allow cross-site cookies
-        secure: true       // required for 'none', ensures HTTPS
+        secure: true       // must use HTTPS
     }
 }));
 
