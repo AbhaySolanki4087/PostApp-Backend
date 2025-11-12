@@ -1,16 +1,17 @@
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const User = require('../models/userModel');
 const Blog = require('../models/blogModel');
 
-// 🧠 Register Controller
+const SECRET_KEY = process.env.JWT_SECRET;
+
+// Register
 exports.registerUser = async (req, res) => {
   const { name, email, password } = req.body;
-
   try {
     const existingUser = await User.findOne({ email });
-    if (existingUser) {
+    if (existingUser)
       return res.status(400).json({ success: false, message: 'User already exists' });
-    }
 
     const passwordHash = await bcrypt.hash(password, 10);
     const newUser = new User({ name, email, passwordHash });
@@ -22,10 +23,9 @@ exports.registerUser = async (req, res) => {
   }
 };
 
-// 🧠 Login Controller
+// Login
 exports.loginUser = async (req, res) => {
   const { email, password } = req.body;
-
   try {
     const user = await User.findOne({ email });
     if (!user)
@@ -35,64 +35,39 @@ exports.loginUser = async (req, res) => {
     if (!isMatch)
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
-    // ✅ Save session
-    req.session.user = { id: user._id, name: user.name, email: user.email };
+    const token = jwt.sign(
+      { id: user._id, name: user.name, email: user.email },
+      SECRET_KEY,
+      { expiresIn: '1d' }
+    );
 
     res.status(200).json({
       success: true,
       message: 'Login successful',
-      user: req.session.user
+      token,
+      user: { id: user._id, name: user.name, email: user.email }
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-// 🧠 Update Controller
-
-exports.updateProfile = async (req, res) => {
-  const { name, bio } = req.body;
-
-  // Get logged-in user's email from session 
-  const email = req.session.user?.email; // using cookie session
-
-  if (!email) {
-    return res.status(401).json({ success: false, message: 'Not logged in' });
-  }
-
-  try {
-    const updatedUser = await User.findOneAndUpdate(
-      { email },             // find user by email
-      { $set: { name, bio } }, // update fields you want
-      { new: true }           // return the updated document
-    );
-
-    res.json({ success: true, user: updatedUser });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Update failed' });
-  }
-};
-
-// 🧠 Logout Controller
+// Logout
 exports.logoutUser = (req, res) => {
-  req.session.destroy(() => {
-    res.clearCookie('connect.sid');
-    res.json({ success: true, message: 'Logged out successfully' });
-  });
+  // With JWT, client just deletes the token
+  res.json({ success: true, message: 'Logged out successfully' });
 };
 
-// 🧠 Profile Controller
+// Get profile
 exports.getProfile = async (req, res) => {
-  if (!req.session.user) {
-    return res.status(401).json({ success: false, message: 'Not logged in' });
-  }
+  const userId = req.user?.id;
+  if (!userId)
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
 
   try {
-    const user = await User.findById(req.session.user.id);
-    if (!user) {
+    const user = await User.findById(userId);
+    if (!user)
       return res.status(404).json({ success: false, message: 'User not found' });
-    }
 
     res.json({
       success: true,
@@ -110,40 +85,50 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// routes/authRoutes.js
-// controllers/authController.js
-// dlete all recprd to dleted user
-exports.deleteProfile = async (req, res) => {
+// Update profile
+exports.updateProfile = async (req, res) => {
+  const { name, bio } = req.body;
+  const userId = req.user?.id;
+  if (!userId)
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+
   try {
-      const userName = req.session.user.name;
-
-      // 1️⃣ Delete user account
-      await User.findByIdAndDelete(req.session.user.id);
-
-      // 2️⃣ Remove all comments and likes by this user from blogs
-      await Blog.updateMany(
-        {},
-        {
-          $pull: { comments: { user: userName }, likedBy: userName }
-        }
-      );
-
-      // 3️⃣ Update likes count based on new likedBy array
-      const blogs = await Blog.find({ likedBy: { $exists: true } });
-      for (const blog of blogs) {
-        blog.likes = blog.likedBy.length;
-        await blog.save();
-      }
-
-      // 4️⃣ Destroy session & clear cookie
-      req.session.destroy(err => { if(err) console.error(err); });
-      res.clearCookie('connect.sid');
-
-      res.json({ success: true, message: 'Account deleted and related comments/likes removed' });
-
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: { name, bio } },
+      { new: true }
+    );
+    res.json({ success: true, user: updatedUser });
   } catch (err) {
-    console.error('Delete profile error:', err);
-    res.status(500).json({ success: false, message: 'Failed to delete account' });
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Update failed' });
   }
 };
 
+// Delete profile
+exports.deleteProfile = async (req, res) => {
+  const userId = req.user?.id;
+  const userName = req.user?.name;
+  if (!userId)
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+  try {
+    await User.findByIdAndDelete(userId);
+
+    await Blog.updateMany(
+      {},
+      { $pull: { comments: { user: userName }, likedBy: userName } }
+    );
+
+    const blogs = await Blog.find({ likedBy: { $exists: true } });
+    for (const blog of blogs) {
+      blog.likes = blog.likedBy.length;
+      await blog.save();
+    }
+
+    res.json({ success: true, message: 'Account deleted and related data removed' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Failed to delete account' });
+  }
+};

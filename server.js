@@ -1,10 +1,7 @@
-// server.js
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
-const MongoStore = require('connect-mongo');
 const cors = require('cors');
-const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 
@@ -14,10 +11,10 @@ const blogRoutes = require('./routes/blogRoutes');
 
 const app = express();
 
-// ✅ CORS setup for local and Vercel frontend
+// ✅ CORS setup
 const allowedOrigins = [
-  'http://localhost:3000', // local dev
-  'https://post-sphere-frontend25.vercel.app' // your deployed frontend
+  'http://localhost:3000',
+  'https://postapp-front-new.vercel.app'
 ];
 
 app.use(cors({
@@ -28,9 +25,8 @@ app.use(cors({
     }
     return callback(null, true);
   },
-  credentials: true // allow cookies/session
+  credentials: true
 }));
-
 
 // Parse JSON and cookies
 app.use(express.json());
@@ -39,41 +35,24 @@ app.use(cookieParser());
 // Serve uploaded images
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Session setup
-app.use(session({
-    name: 'connect.sid', // optional, default name
-    secret: process.env.SESSION_SECRET || 'mysecretkey',
-    resave: false,
-    saveUninitialized: false,
-    store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
-    cookie: {
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000,
-        sameSite: 'none',  // allow cross-site cookies
-        secure: true       // must use HTTPS
-    }
-}));
-
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-.then(() => console.log('MongoDB connected'))
-.catch(err => console.error('MongoDB error:', err));
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.error('MongoDB error:', err));
 
 // Routes
 app.use('/api', authRoutes);
 app.use('/api/blogs', blogRoutes);
 
-// ✅ Error handler
+// Error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ success: false, message: err.message });
 });
 
-// ✅ Only listen locally
 if (require.main === module) {
-    const PORT = process.env.PORT || 5000;
-    app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
 }
 
-// ✅ Export app for Vercel or other serverless platforms
 module.exports = app;

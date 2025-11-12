@@ -1,27 +1,20 @@
-// // middlewares/authMiddleware.js
+const jwt = require('jsonwebtoken');
+const SECRET_KEY = process.env.JWT_SECRET;
 
-// function isLoggedIn(req, res, next) {
-//   if (!req.session?.user) {
-//     req.session = req.session || {};
-//     req.session.user = {name:'abhay'};
-//   }
-
-//   //if still no user
-//   if(!req.session.user){
-    
-//     return res.status(401).json({ success: false, message: 'Unauthorized' });
-//   } 
-//   req.user = req.session.user;
-//   next();
-  
-// }
-
-// module.exports = { isLoggedIn };
-// middlewares/authMiddleware.js
 module.exports = function isLoggedIn(req, res, next) {
-  if (req.session && req.session.user) {
-    return next();
-  } else {
+  const authHeader = req.headers.authorization;
+  if (!authHeader)
     return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  if (!token)
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+  try {
+    const decoded = jwt.verify(token, SECRET_KEY);
+    req.user = decoded; // attach user info
+    next();
+  } catch (err) {
+    return res.status(401).json({ success: false, message: 'Invalid or expired token' });
   }
 };
